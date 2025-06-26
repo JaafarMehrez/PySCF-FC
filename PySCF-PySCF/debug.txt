@@ -1,0 +1,192 @@
+#!/usr/bin/env python
+
+from functools import reduce
+import numpy as np
+from pyscf.mp.mp2 import get_frozen_mask
+from pyscf.tools.fcidump import TOL, DEFAULT_FLOAT_FORMAT, from_integrals
+from pyscf import lib
+np.set_printoptions(threshold=np.inf)
+
+def freezeCore(oneBody,twoBody,core,valence=None):
+    np.set_printoptions(threshold=np.inf)
+    ''' Freeze Hamiltonian orbitals.
+
+    ```
+    orbs = numpy.array(10)
+    oneBody,twoBody,constant = freezeCore(oneBody,twoBody,core=(orbs<3),valence=(orbs>3)&(orb<7))
+    # orbs 7,8,9 are discarded virtual orbitals.
+    Only implemented for RHF oneBody and twoBody (UHF would break spin-symmetry).
+    ```
+
+    Args:
+        oneBody (array): one-body part of the Hamiltonian.
+        twoBody (array): two-body part of the Hamiltonian.
+        core (bool array): True only for each orbital to consider occupied, but frozen.
+        valence (bool array): True only for each orbital to consider active in the valence.
+           If None, it will be ~core.
+           Orbitals not core or valence are truncated from the simulation.
+    Returns:
+        Pointers back to oneBody, twoBody, and the new value of the constant.
+        Note: oneBody and twoBody are modified in-place due to their size.
+    '''
+
+    if valence is None: valence = ~core
+    else: assert not (core & valence).any(), f"Cannot be both core and valence.\n Core and valence:\n {core & valence}"
+
+    # Unpack index.
+    #twoBody = twoBody.reshape(twoBody.shape[0],oneBody.shape[0],oneBody.shape[1])
+
+    # Effect of core H1 on other terms.
+    constant = 2.*oneBody[core][:,core].trace()
+    
+
+    # Remove frozen space from one-body
+    oneBody = oneBody[valence][:,valence]
+    
+    
+    # Effect of core H2 on other terms.
+    constant += 2*np.einsum('gii,gjj->',
+            twoBody[:,core][:,:,core],
+            twoBody[:,core][:,:,core].conj()
+        )
+    
+    constant -= np.einsum('gij,gij->',
+            twoBody[:,core][:,:,core],
+            twoBody[:,core][:,:,core].conj()
+        )
+    
+    oneBody += np.einsum('gkk,gji->ij',
+            twoBody[:,core][:,:,core],
+            twoBody[:,valence][:,:,valence].conj()
+        )
+    #print(oneBody)
+    oneBody += -0.5*np.einsum('gik,gjk->ij',
+            twoBody[:,valence][:,:,core],
+            twoBody[:,valence][:,:,core].conj()
+        )
+    oneBody += np.einsum('gkk,gij->ij',
+            twoBody[:,core][:,:,core].conj(),
+            twoBody[:,valence][:,:,valence]
+        )
+    oneBody += -0.5*np.einsum('gki,gkj->ij',
+            twoBody[:,core][:,:,valence].conj(),
+            twoBody[:,core][:,:,valence]
+        )
+
+    # Remove frozen space from two-body.
+    twoBody = twoBody[:,valence][:,:,valence]
+    #twoBody = twoBody.reshape(twoBody.shape[0],twoBody.shape[1]*twoBody.shape[2])
+
+    return oneBody,twoBody,constant
+
+
+def write_head(fout, nmo, nelec, ms=0, orbsym=None):
+    if not isinstance(nelec, (int, np.number)):
+        ms = abs(nelec[0] - nelec[1])
+        nelec = nelec[0] + nelec[1]
+    fout.write(f" {nmo:4d} {nelec:2d}\n")
+    if orbsym is not None and len(orbsym) > 0:
+        fout.write(f"{' '.join([str(x) for x in orbsym])}\n")
+    else:
+        fout.write(f"{' 1' * nmo}\n")
+    fout.write(' 150000\n')
+
+
+from pyscf.tools import fcidump
+fcidump.write_head = write_head
+
+def main():
+    from pyscf.pbc import gto, scf
+    
+    name = 'out'
+    cell = gto.Cell()
+    cell.unit = 'A'
+    # strucure is obtained from CCDC, CSD entry: PENCEN10 
+    cell.atom = ''' 
+
+O  0.000000  0.000000  0.000000
+H  0.758602  0.000000  0.504284
+H -0.758602  0.000000  0.504284
+
+    '''
+    cell.a = [[ 5.0     ,  0.0        ,  0.0 ],
+              [ 0.0     ,  5.0        ,  0.0 ],
+              [ 0.0     ,  0.0        ,  5.0]] 
+    cell.basis = 'ccecp-cc-pvtz'
+    cell.pseudo = 'ccecp'
+    cell.verbose = 7
+    cell.output=name +'.txt'
+    cell.exp_to_discard=0.1
+    cell.max_memory = 4000
+    cell.build()
+
+    mymf = scf.RHF(cell, exxdiv=None)
+    auxbasis = 'cc-pvtz-ri'
+    mymf = mymf.density_fit(auxbasis=auxbasis)
+    ekrhf = mymf.kernel()
+
+    # FCIDUMP with frozen orbitals
+    nocc = mymf.mol.nelectron // 2
+    nao, nmo = mymf.mo_coeff.shape
+    nvir = nmo - nocc
+    
+    nocc_active = 3
+    nvir_active = 50
+    frozen = list(range(0, nocc-nocc_active)) + list(range(nocc+nvir_active, nmo))
+    if len(frozen) == 0: 
+        frozen = None
+
+    from pyscf.cc import ccsd
+    mycc = ccsd.RCCSD(mymf, frozen=frozen)
+
+    mo_coeff = mymf.mo_coeff
+    assert mo_coeff.dtype == np.double
+    orbsym = getattr(mo_coeff, 'orbsym', None)
+    nuc = mymf.energy_nuc()
+
+    # Get full 1-body Hamiltonian
+    h1e = reduce(np.dot, (mo_coeff.T, mymf.get_hcore(), mo_coeff))
+    # Get full Lpq (in MO basis)
+    from pyscf.ao2mo import _ao2mo
+    with_df = mymf.with_df
+    nmo = mo_coeff.shape[1]
+    naux = with_df.get_naoaux()
+    mo = np.asarray(mo_coeff, order='F')
+    ijslice = (0, nmo, 0, nmo)
+    p1 = 0
+    Lpq = np.empty((naux, nmo, nmo))
+    Lpq_blk = None
+    for eri1 in with_df.loop():
+        Lpq_blk = _ao2mo.nr_e2(eri1, mo, ijslice, aosym='s2', mosym='s1', out=Lpq_blk)
+        p0, p1 = p1, p1 + Lpq_blk.shape[0]
+        Lpq[p0:p1] = Lpq_blk.reshape(p1-p0,nmo,nmo)
+    Lpq_blk = None
+
+    active = get_frozen_mask(mycc)
+    frozen_core = np.zeros_like(active, dtype=np.bool)
+    nocc = cell.nelectron//2
+    frozen_core[:nocc] = ~active[:nocc]
+    h1e, Lpq, constant = freezeCore(h1e, Lpq, frozen_core, active)
+    nmo = mycc.nmo
+
+    # compact h2e
+    # npq_pair = nmo * (nmo+1) // 2
+    # Lpq = lib.pack_tril(Lpq)
+    # print(f"new Lpq shape: {Lpq.shape}")
+    # h2e = np.zeros((npq_pair, npq_pair))
+    # lib.dot(Lpq.T, Lpq, 1, h2e, 1)
+
+    # full h2e
+    h2e = np.zeros((nmo, nmo, nmo, nmo))
+    h2e = np.einsum('Lpq,Lrs->pqrs', Lpq, Lpq)
+    Lpq = None
+
+    # Save h1e, h2e, and nuc
+    filename = 'fort.55'
+    assert(nmo == h1e.shape[0])
+    nelec = (mycc.nocc, mycc.nocc)
+    from_integrals(filename, h1e, h2e, nmo, nelec, nuc+constant, 0, orbsym, tol=TOL, float_format=DEFAULT_FLOAT_FORMAT)
+
+if __name__ == '__main__':
+    main()
+
