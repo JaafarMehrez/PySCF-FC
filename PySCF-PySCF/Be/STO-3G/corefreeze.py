@@ -13,52 +13,40 @@ from pyscf.scf import atom_hf
 np.set_printoptions(threshold=np.inf)
 
 def freezeCore(oneBody, twoBody, core, valence=None):
-    """
-    Apply the frozen core approximation to the Hamiltonian.
-
-    Args:
-        oneBody (ndarray): Full one-body Hamiltonian in MO basis (nmo, nmo).
-        twoBody (ndarray): Full two-body ERI tensor in MO basis (nmo, nmo, nmo, nmo),
-                          in chemists' notation (pq|rs).
-        core (ndarray): Boolean array, True for frozen core orbitals.
-        valence (ndarray, optional): Boolean array, True for active orbitals.
-                                     If None, taken as ~core.
-
-    Returns:
-        tuple: (oneBody_active, twoBody_active, constant)
-               - oneBody_active: One-body Hamiltonian in active space.
-               - twoBody_active: Two-body Hamiltonian in active space.
-               - constant: Energy shift due to core orbitals.
-    """
-    # Determine valence mask
     if valence is None:
         valence = ~core
     else:
-        # Ensure no overlap between core and valence
         assert not (core & valence).any(), "Orbitals cannot be both core and valence."
 
-    # Get indices for core and valence orbitals
     core_idx = np.where(core)[0]
-    print(core_idx)
     valence_idx = np.where(valence)[0]
-    print(core_idx)
 
-    # Compute constant energy shift from core orbitals
-    # E_core = 2 * sum_i h_{ii} + sum_{i,j} [2 (ii|jj) - (ij|ji)]
-    constant = 2. * np.einsum('ii->', oneBody[np.ix_(core_idx, core_idx)])
-    constant += 2. * np.einsum('iijj->', twoBody[np.ix_(core_idx, core_idx, core_idx, core_idx)])
-    constant -= np.einsum('ijji->', twoBody[np.ix_(core_idx, core_idx, core_idx, core_idx)])
+    # constant energy contributions from frozen core:
+    #  E_core = 2 * sum_i h_ii + sum_{i,j} (2*(ii|jj) - (ij|ij))
+    constant = 2.0 * np.einsum('ii->', oneBody[np.ix_(core_idx, core_idx)])
+    core_core = twoBody[np.ix_(core_idx, core_idx, core_idx, core_idx)]
+    constant += 2.0 * np.einsum('iijj->', core_core)   # 2 * (ii|jj)
+    constant -= 1.0 * np.einsum('ijji->', core_core)   #    (ij|ji)  (exchange term)
 
-    # Compute effective one-body Hamiltonian in active space
-    # h_{pq}^eff = h_{pq} + sum_k [2 (pk|qk) - (pk|kq)]
-    oneBody_active = oneBody[np.ix_(valence_idx, valence_idx)]
-    oneBody_active += 2 * np.einsum('pkqk->pq', twoBody[np.ix_(valence_idx, core_idx, valence_idx, core_idx)])
-    oneBody_active -= np.einsum('pkkq->pq', twoBody[np.ix_(valence_idx, core_idx, core_idx, valence_idx)])
+    # Build active one-body (valence-valence) and add core contributions:
+    # F_pq += 2 * sum_k (pq|kk) - sum_k (pk|kq)
+    h_active = oneBody[np.ix_(valence_idx, valence_idx)].copy()
 
-    # Extract two-body integrals for active space
-    twoBody_active = twoBody[np.ix_(valence_idx, valence_idx, valence_idx, valence_idx)]
+    # Coulomb: sum_k (p q | k k) -> twoBody[p,q,k,k]
+    coul_block = twoBody[np.ix_(valence_idx, valence_idx, core_idx, core_idx)]
+    # coul_block has ordering (p,q,k,k) so einsum 'pqkk->pq' sums over k
+    h_active += 2.0 * np.einsum('pqkk->pq', coul_block)
 
-    return oneBody_active, twoBody_active, constant
+    # Exchange: sum_k (p k | k q) -> twoBody[p,k,k,q]
+    exch_block = twoBody[np.ix_(valence_idx, core_idx, core_idx, valence_idx)]
+    # exch_block ordering (p,k,k,q) so einsum 'pkkq->pq' sums over k
+    h_active -= np.einsum('pkkq->pq', exch_block)
+
+    # Active two-body integrals are just the valence-only block:
+    twoBody_active = twoBody[np.ix_(valence_idx, valence_idx, valence_idx, valence_idx)].copy()
+
+    return h_active, twoBody_active, constant
+
 
 def write_head(fout, nmo, nelec, ms=0, orbsym=None):
     """
@@ -98,9 +86,9 @@ def main():
 
     # Define the molecule (Neon atom as an example)
     mol = pyscf.M(
-        atom='NE',
+        atom='BE',
         unit='angstrom',
-        basis={'NE': parse_gaussian.load('NE-aVDZ-EMSL.gbs', 'NE')},
+        basis={'BE': parse_gaussian.load('BE-STO-3G-EMSL.gbs', 'BE')},
         charge=0,
         spin=0,
         verbose=9,
@@ -121,13 +109,13 @@ def main():
 
     # Set up RHF calculation
     mymf = mol.RHF().set(
-        conv_tol=1e-10,
-        max_cycle=999,
-        ddm_tol=1e-14,
+        conv_tol=1e-14,
+        max_cycle=9999,
+        ddm_tol=1e-15,
         direct_scf=False,
         chkfile=name + '.chk',
         init_guess='atom',
-        irrep_nelec={'Ag': 4, 'B3u': 2, 'B2u': 2, 'B1u': 2}
+        irrep_nelec={'Ag': 4}
     )
     ekrhf = mymf.kernel()
     atom_hf.AtomSphAverageRHF = original_AtomSphAverageRHF
@@ -136,8 +124,8 @@ def main():
     nocc = mymf.mol.nelectron // 2  # Number of occupied orbitals
     nao, nmo = mymf.mo_coeff.shape  # Number of AOs and MOs
     nvir = nmo - nocc  # Number of virtual orbitals
-    nocc_active = 4  # Number of active occupied orbitals
-    nvir_active = 18  # Number of active virtual orbitals
+    nocc_active = 1  # Number of active occupied orbitals
+    nvir_active = 3  # Number of active virtual orbitals
     frozen = list(range(0, nocc - nocc_active)) + list(range(nocc + nvir_active, nmo))
     if len(frozen) == 0:
         frozen = None
