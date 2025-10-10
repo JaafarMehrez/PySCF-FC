@@ -1,4 +1,4 @@
-#INFO: **** input file is /Users/jmhrzz/HPQC/ForkedRepo/FrozenCore/PySCF-PySCF/Be/STO-3G/experiement/corefreeze.py ****
+#INFO: **** input file is /Users/jmhrzz/HPQC/ForkedRepo/FrozenCore/PySCF-PySCF/Be/STO-3G/corefreeze.py ****
 #!/usr/bin/env python
 
 import pyscf
@@ -174,7 +174,7 @@ if __name__ == '__main__':
 System: uname_result(system='Darwin', node='Mhrzzs-MacBook-Air.local', release='24.6.0', version='Darwin Kernel Version 24.6.0: Mon Jul 14 11:30:51 PDT 2025; root:xnu-11417.140.69~1/RELEASE_ARM64_T8112', machine='arm64')  Threads 1
 Python 3.11.10 (main, Sep  7 2024, 01:03:31) [Clang 16.0.0 (clang-1600.0.26.3)]
 numpy 2.3.3  scipy 1.16.2  h5py 3.12.1
-Date: Fri Oct 10 07:50:40 2025
+Date: Fri Oct 10 09:04:52 2025
 PySCF version 2.7.0
 PySCF path  /Users/jmhrzz/HPQC/PySCF/venv/Interface/lib/python3.11/site-packages/pyscf
 
@@ -226,7 +226,7 @@ ecp = {}
 bas 0, expnt(s) = [30.167871   5.4951153  1.4871927]
 bas 1, expnt(s) = [1.3148331 0.3055389 0.0993707]
 bas 2, expnt(s) = [1.3148331 0.3055389 0.0993707]
-CPU time:         0.44
+CPU time:         0.42
 arg.atm = [[ 4 20  1 23  0  0]]
 arg.bas = [[ 0  0  3  1  0 24 27  0]
  [ 0  0  3  1  0 30 33  0]
@@ -279,7 +279,7 @@ SCF conv_tol_grad = None
 SCF ddm_tol = 1e-10
 SCF max_cycles = 9999
 direct_scf = False
-chkfile to save SCF result = /var/folders/sv/p893skhd53z1sh_0fgwlc_0w0000gn/T/tmpm7b44vjz
+chkfile to save SCF result = /var/folders/sv/p893skhd53z1sh_0fgwlc_0w0000gn/T/tmpumz5vnkr
 max_memory 4000 MB (current use 0 MB)
 atom = Be
 Set gradient conv threshold to 3.16228e-05
@@ -357,5 +357,5 @@ B3u nocc = 0
 E1 = -19.227701255092764  E_coul = 4.875820789272321
 Extra cycle  E= -14.3518804658204  delta_E=    0  |g|=    0  |ddm|=    0
     CPU time for scf_cycle      0.01 sec, wall time      0.02 sec
-    CPU time for SCF      0.02 sec, wall time      0.02 sec
+    CPU time for SCF      0.01 sec, wall time      0.02 sec
 converged SCF energy = -14.3518804658204
