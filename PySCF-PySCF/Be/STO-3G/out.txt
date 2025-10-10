@@ -146,8 +146,32 @@ def main():
                                f"but number of active orbitals is {nmo_active}.")
 
     filename = 'fort.55'
-    nelec = (mycc.nocc, mycc.nocc)
-    from_integrals(filename, h1e_active, h2e_active, nmo_active, nelec, nuc + constant, 0, orbsym_active,
+    #nelec = (mycc.nocc, mycc.nocc)
+    
+    nelec_full = mol.nelectron       # e.g. 7 for N
+    spin = mol.spin                  # e.g. 3 in your setup
+
+    # alpha/beta counts for full system
+    nalpha_full = (nelec_full + spin) // 2
+    nbeta_full  = (nelec_full - spin) // 2
+
+    # number of occupied spatial orbitals in full reference
+    nocc_full = mol.nelectron // 2   # = 7 // 2 = 3
+
+    # count how many occupied (spatial) orbitals were frozen
+    # frozen_core is already defined in your script
+    nfrozen_core = int(np.count_nonzero(frozen_core[:nocc_full]))
+
+    # active alpha/beta counts (assumes frozen cores are doubly-occupied)
+    nalpha_active = nalpha_full - nfrozen_core
+    nbeta_active  = nbeta_full  - nfrozen_core
+
+    nelec_active = (nalpha_active, nbeta_active)
+    # Or pass a single integer: nalpha_active + nbeta_active
+
+    print("active electrons (alpha,beta):", nelec_active)
+    
+    from_integrals(filename, h1e_active, h2e_active, nmo_active, nelec_active, nuc + constant, 0, orbsym_active,
                    tol=1e-18, float_format='% 0.20E')
 
 if __name__ == '__main__':
@@ -159,7 +183,7 @@ if __name__ == '__main__':
 System: uname_result(system='Darwin', node='Mhrzzs-MacBook-Air.local', release='24.6.0', version='Darwin Kernel Version 24.6.0: Mon Jul 14 11:30:51 PDT 2025; root:xnu-11417.140.69~1/RELEASE_ARM64_T8112', machine='arm64')  Threads 1
 Python 3.11.10 (main, Sep  7 2024, 01:03:31) [Clang 16.0.0 (clang-1600.0.26.3)]
 numpy 2.3.3  scipy 1.16.2  h5py 3.12.1
-Date: Fri Oct 10 09:45:00 2025
+Date: Fri Oct 10 13:52:24 2025
 PySCF version 2.7.0
 PySCF path  /Users/jmhrzz/HPQC/PySCF/venv/Interface/lib/python3.11/site-packages/pyscf
 
@@ -211,7 +235,7 @@ ecp = {}
 bas 0, expnt(s) = [30.167871   5.4951153  1.4871927]
 bas 1, expnt(s) = [1.3148331 0.3055389 0.0993707]
 bas 2, expnt(s) = [1.3148331 0.3055389 0.0993707]
-CPU time:         0.40
+CPU time:         0.41
 arg.atm = [[ 4 20  1 23  0  0]]
 arg.bas = [[ 0  0  3  1  0 24 27  0]
  [ 0  0  3  1  0 30 33  0]
@@ -264,7 +288,7 @@ SCF conv_tol_grad = None
 SCF ddm_tol = 1e-10
 SCF max_cycles = 9999
 direct_scf = False
-chkfile to save SCF result = /var/folders/sv/p893skhd53z1sh_0fgwlc_0w0000gn/T/tmpwqlnexwg
+chkfile to save SCF result = /var/folders/sv/p893skhd53z1sh_0fgwlc_0w0000gn/T/tmpul2eytwg
 max_memory 4000 MB (current use 0 MB)
 atom = Be
 Set gradient conv threshold to 3.16228e-05
@@ -315,7 +339,7 @@ Atom Be, E = -14.3518804658
 Nelec from initial guess = 4.0
 E1 = -19.227701255092764  E_coul = 4.875820789272321
 init E= -14.3518804658204
-    CPU time for initialize scf      0.01 sec, wall time      0.01 sec
+    CPU time for initialize scf      0.01 sec, wall time      0.02 sec
 HOMO (Ag) = -0.254037695573913  LUMO (B1u) = 0.221085957101259
 irrep_nelec = [4, 0, 0, 0]
 Ag nocc = 2  HOMO = -0.254037695573913

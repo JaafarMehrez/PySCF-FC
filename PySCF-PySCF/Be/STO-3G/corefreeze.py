@@ -145,8 +145,17 @@ def main():
                                f"but number of active orbitals is {nmo_active}.")
 
     filename = 'fort.55'
-    nelec = (mycc.nocc, mycc.nocc)
-    from_integrals(filename, h1e_active, h2e_active, nmo_active, nelec, nuc + constant, 0, orbsym_active,
+    #nelec = (mycc.nocc, mycc.nocc)
+    nelec_full = mol.nelectron
+    spin = mol.spin       
+    nalpha_full = (nelec_full + spin) // 2
+    nbeta_full  = (nelec_full - spin) // 2
+    nocc_full = mol.nelectron // 2
+    nfrozen_core = int(np.count_nonzero(frozen_core[:nocc_full]))
+    nalpha_active = nalpha_full - nfrozen_core
+    nbeta_active  = nbeta_full  - nfrozen_core
+    nelec_active = (nalpha_active, nbeta_active)
+    from_integrals(filename, h1e_active, h2e_active, nmo_active, nelec_active, nuc + constant, 0, orbsym_active,
                    tol=1e-18, float_format='% 0.20E')
 
 if __name__ == '__main__':
