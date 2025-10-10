@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import pyscf
 import numpy as np
 from functools import reduce
@@ -9,10 +7,22 @@ from pyscf.tools.fcidump import from_integrals
 from pyscf import lib
 from pyscf.scf import atom_hf
 
-# Ensure full numpy array printing for debugging if needed
 np.set_printoptions(threshold=np.inf)
 
+
 def freezeCore(oneBody, twoBody, core, valence=None):
+    """
+    Apply frozen-core approximation to integrals.
+
+    Args:
+        oneBody: one-electron integrals in MO basis (nmo x nmo)
+        twoBody: two-electron integrals in MO basis (nmo x nmo x nmo x nmo)
+        core: boolean mask (length nmo) True for core (frozen) orbitals
+        valence: boolean mask True for valence (active) orbitals; if None use ~core
+
+    Returns:
+        h_active, twoBody_active, constant (scalar energy from frozen core)
+    """
     if valence is None:
         valence = ~core
     else:
@@ -21,44 +31,23 @@ def freezeCore(oneBody, twoBody, core, valence=None):
     core_idx = np.where(core)[0]
     valence_idx = np.where(valence)[0]
 
-    # constant energy contributions from frozen core:
-    #  E_core = 2 * sum_i h_ii + sum_{i,j} (2*(ii|jj) - (ij|ij))
     constant = 2.0 * np.einsum('ii->', oneBody[np.ix_(core_idx, core_idx)])
     core_core = twoBody[np.ix_(core_idx, core_idx, core_idx, core_idx)]
-    constant += 2.0 * np.einsum('iijj->', core_core)   # 2 * (ii|jj)
-    constant -= 1.0 * np.einsum('ijji->', core_core)   #    (ij|ji)  (exchange term)
+    constant += 2.0 * np.einsum('iijj->', core_core)
+    constant -= 1.0 * np.einsum('ijji->', core_core)
 
-    # Build active one-body (valence-valence) and add core contributions:
-    # F_pq += 2 * sum_k (pq|kk) - sum_k (pk|kq)
     h_active = oneBody[np.ix_(valence_idx, valence_idx)].copy()
-
-    # Coulomb: sum_k (p q | k k) -> twoBody[p,q,k,k]
     coul_block = twoBody[np.ix_(valence_idx, valence_idx, core_idx, core_idx)]
-    # coul_block has ordering (p,q,k,k) so einsum 'pqkk->pq' sums over k
     h_active += 2.0 * np.einsum('pqkk->pq', coul_block)
-
-    # Exchange: sum_k (p k | k q) -> twoBody[p,k,k,q]
     exch_block = twoBody[np.ix_(valence_idx, core_idx, core_idx, valence_idx)]
-    # exch_block ordering (p,k,k,q) so einsum 'pkkq->pq' sums over k
     h_active -= np.einsum('pkkq->pq', exch_block)
 
-    # Active two-body integrals are just the valence-only block:
     twoBody_active = twoBody[np.ix_(valence_idx, valence_idx, valence_idx, valence_idx)].copy()
 
     return h_active, twoBody_active, constant
 
 
 def write_head(fout, nmo, nelec, ms=0, orbsym=None):
-    """
-    Custom header writer for FCIDUMP file.
-
-    Args:
-        fout (file): File object to write to.
-        nmo (int): Number of molecular orbitals.
-        nelec (int or tuple): Number of electrons (total or (alpha, beta)).
-        ms (int): Spin multiplicity - 1 (default 0 for singlet).
-        orbsym (list): Orbital symmetry labels.
-    """
     if not isinstance(nelec, (int, np.number)):
         ms = abs(nelec[0] - nelec[1])
         nelec = nelec[0] + nelec[1]
@@ -70,21 +59,13 @@ def write_head(fout, nmo, nelec, ms=0, orbsym=None):
         fout.write(f"{' 1' * nmo}\n")
     fout.write(' 150000\n')
 
-# Override PySCF's default FCIDUMP header writer
 from pyscf.tools import fcidump
 fcidump.write_head = write_head
 
+
 def main():
-    """
-    Main function to set up the molecule, perform RHF, apply frozen core approximation,
-    and generate the FCIDUMP file.
-    """
     from pyscf import gto, scf, ao2mo
-
-    # Output filename prefix
     name = 'out'
-
-    # Define the molecule (Neon atom as an example)
     mol = pyscf.M(
         atom='BE',
         unit='angstrom',
@@ -98,16 +79,12 @@ def main():
         max_memory=4000,
     )
     original_AtomSphAverageRHF = atom_hf.AtomSphAverageRHF
-
     class CustomAtomSphAverageRHF(original_AtomSphAverageRHF):
         def __init__(self, mol):
             super().__init__(mol)
             self.max_cycle = 9999
             self.direct_scf = False
-
     atom_hf.AtomSphAverageRHF = CustomAtomSphAverageRHF
-
-    # Set up RHF calculation
     mymf = mol.RHF().set(
         conv_tol=1e-14,
         max_cycle=9999,
@@ -119,51 +96,59 @@ def main():
     )
     ekrhf = mymf.kernel()
     atom_hf.AtomSphAverageRHF = original_AtomSphAverageRHF
+    nocc = mymf.mol.nelectron // 2
+    nao, nmo_full = mymf.mo_coeff.shape
+    nvir = nmo_full - nocc
 
-    # Define active space for frozen core
-    nocc = mymf.mol.nelectron // 2  # Number of occupied orbitals
-    nao, nmo = mymf.mo_coeff.shape  # Number of AOs and MOs
-    nvir = nmo - nocc  # Number of virtual orbitals
-    nocc_active = 1  # Number of active occupied orbitals
-    nvir_active = 3  # Number of active virtual orbitals
-    frozen = list(range(0, nocc - nocc_active)) + list(range(nocc + nvir_active, nmo))
+    nocc_active = 1
+    nvir_active = 3
+
+    frozen = list(range(0, nocc - nocc_active)) + list(range(nocc + nvir_active, nmo_full))
     if len(frozen) == 0:
         frozen = None
 
-    # Set up CCSD with frozen orbitals to get active space mask
     from pyscf.cc import ccsd
     mycc = ccsd.RCCSD(mymf, frozen=frozen)
-
-    # Get MO coefficients and symmetry
+    
     mo_coeff = mymf.mo_coeff
     assert mo_coeff.dtype == np.double
-    orbsym = getattr(mo_coeff, 'orbsym', None)
+    orbsym_full = getattr(mo_coeff, 'orbsym', None)
     nuc = mymf.energy_nuc()
 
-    # Compute one-body Hamiltonian in MO basis
     h1e = reduce(np.dot, (mo_coeff.T, mymf.get_hcore(), mo_coeff))
 
-    # Compute two-body Hamiltonian (ERI tensor) in MO basis
-    nmo = mo_coeff.shape[1]
+    nmo_full = mo_coeff.shape[1]
     mo = np.asarray(mo_coeff, order='F')
-    eri = pyscf.ao2mo.restore(1, pyscf.ao2mo.incore.general(mymf._eri, (mo_coeff, mo_coeff, mo_coeff, mo_coeff), compact=False), nmo)
+    eri = pyscf.ao2mo.restore(1,
+                              pyscf.ao2mo.incore.general(mymf._eri, (mo_coeff, mo_coeff, mo_coeff, mo_coeff),
+                                                         compact=False),
+                              nmo_full)
 
-    # Define active and frozen core orbitals
     active = get_frozen_mask(mycc)
     frozen_core = np.zeros_like(active, dtype=np.bool_)
-    nocc = mol.nelectron // 2
-    frozen_core[:nocc] = ~active[:nocc]
+    nocc_full = mol.nelectron // 2
+    frozen_core[:nocc_full] = ~active[:nocc_full]
 
-    # Apply frozen core approximation
-    h1e, h2e, constant = freezeCore(h1e, eri, frozen_core, active)
+    if orbsym_full is None:
+        orbsym_active = None
+    else:
+        orbsym_arr = np.asarray(orbsym_full, dtype=int)
+        valence_idx = np.where(active)[0]
+        orbsym_active = [int(x) for x in orbsym_arr[valence_idx]]
 
-    # Update nmo to number of active orbitals
-    nmo = h1e.shape[0]
+    h1e_active, h2e_active, constant = freezeCore(h1e, eri, frozen_core, active)
+    nmo_active = h1e_active.shape[0]
 
-    # Write FCIDUMP file
+    if orbsym_active is not None:
+        if len(orbsym_active) != nmo_active:
+            raise RuntimeError(f"Length mismatch: orbsym_active has length {len(orbsym_active)} "
+                               f"but number of active orbitals is {nmo_active}.")
+
     filename = 'fort.55'
-    nelec = (mycc.nocc, mycc.nocc)  # Number of alpha and beta electrons in active space
-    from_integrals(filename, h1e, h2e, nmo, nelec, nuc + constant, 0, orbsym, tol=1e-18, float_format='% 0.20E')
+    nelec = (mycc.nocc, mycc.nocc)
+    from_integrals(filename, h1e_active, h2e_active, nmo_active, nelec, nuc + constant, 0, orbsym_active,
+                   tol=1e-18, float_format='% 0.20E')
 
 if __name__ == '__main__':
     main()
+
