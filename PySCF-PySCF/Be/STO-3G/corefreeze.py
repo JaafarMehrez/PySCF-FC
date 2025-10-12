@@ -29,12 +29,15 @@ def freezeCore(oneBody, twoBody, core, valence=None):
         assert not (core & valence).any(), "Orbitals cannot be both core and valence."
 
     core_idx = np.where(core)[0]
+    print(core_idx)
     valence_idx = np.where(valence)[0]
 
     constant = 2.0 * np.einsum('ii->', oneBody[np.ix_(core_idx, core_idx)])
     core_core = twoBody[np.ix_(core_idx, core_idx, core_idx, core_idx)]
     constant += 2.0 * np.einsum('iijj->', core_core)
     constant -= 1.0 * np.einsum('ijji->', core_core)
+    
+    print(constant)
 
     h_active = oneBody[np.ix_(valence_idx, valence_idx)].copy()
     coul_block = twoBody[np.ix_(valence_idx, valence_idx, core_idx, core_idx)]
