@@ -67,9 +67,9 @@ def main():
     from pyscf import gto, scf, ao2mo
     name = 'out'
     mol = pyscf.M(
-        atom='BE',
+        atom='NE',
         unit='angstrom',
-        basis={'BE': parse_gaussian.load('BE-STO-3G-EMSL.gbs', 'BE')},
+        basis={'NE': parse_gaussian.load('NE-aVDZ-EMSL.gbs', 'NE')},
         charge=0,
         spin=0,
         verbose=9,
@@ -92,24 +92,23 @@ def main():
         direct_scf=False,
         chkfile=name + '.chk',
         init_guess='atom',
-        irrep_nelec={'Ag': 4}
+        irrep_nelec={'Ag': 4, 'B3u': 2, 'B2u': 2, 'B1u': 2}
     )
     ekrhf = mymf.kernel()
     atom_hf.AtomSphAverageRHF = original_AtomSphAverageRHF
     nocc = mymf.mol.nelectron // 2
     nao, nmo_full = mymf.mo_coeff.shape
     nvir = nmo_full - nocc
-
+    '''
     nocc_active = 1
     nvir_active = 3
 
     frozen = list(range(0, nocc - nocc_active)) + list(range(nocc + nvir_active, nmo_full))
     if len(frozen) == 0:
         frozen = None
-
-    from pyscf.cc import ccsd
-    mycc = ccsd.RCCSD(mymf, frozen=frozen)
-    
+    '''
+    from pyscf import cc
+    mycc = cc.RCCSD(mymf, frozen=1)
     mo_coeff = mymf.mo_coeff
     assert mo_coeff.dtype == np.double
     orbsym_full = getattr(mo_coeff, 'orbsym', None)

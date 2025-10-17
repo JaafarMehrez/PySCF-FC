@@ -30,15 +30,12 @@ def freezeCore(oneBody, twoBody, core, valence=None):
         assert not (core & valence).any(), "Orbitals cannot be both core and valence."
 
     core_idx = np.where(core)[0]
-    print(core_idx)
     valence_idx = np.where(valence)[0]
 
     constant = 2.0 * np.einsum('ii->', oneBody[np.ix_(core_idx, core_idx)])
     core_core = twoBody[np.ix_(core_idx, core_idx, core_idx, core_idx)]
     constant += 2.0 * np.einsum('iijj->', core_core)
     constant -= 1.0 * np.einsum('ijji->', core_core)
-    
-    print(constant)
 
     h_active = oneBody[np.ix_(valence_idx, valence_idx)].copy()
     coul_block = twoBody[np.ix_(valence_idx, valence_idx, core_idx, core_idx)]
@@ -118,15 +115,10 @@ def main():
     assert mo_coeff.dtype == np.double
     orbsym_full = getattr(mo_coeff, 'orbsym', None)
     nuc = mymf.energy_nuc()
-
     h1e = reduce(np.dot, (mo_coeff.T, mymf.get_hcore(), mo_coeff))
-
     nmo_full = mo_coeff.shape[1]
     mo = np.asarray(mo_coeff, order='F')
-    eri = pyscf.ao2mo.restore(1,
-                              pyscf.ao2mo.incore.general(mymf._eri, (mo_coeff, mo_coeff, mo_coeff, mo_coeff),
-                                                         compact=False),
-                              nmo_full)
+    eri = pyscf.ao2mo.restore(1,pyscf.ao2mo.incore.general(mymf._eri, (mo_coeff, mo_coeff, mo_coeff, mo_coeff),compact=False), nmo_full)
 
     active = get_frozen_mask(mycc)
     frozen_core = np.zeros_like(active, dtype=np.bool_)
@@ -171,7 +163,7 @@ if __name__ == '__main__':
 System: uname_result(system='Darwin', node='Mhrzzs-MacBook-Air.local', release='24.6.0', version='Darwin Kernel Version 24.6.0: Mon Jul 14 11:30:51 PDT 2025; root:xnu-11417.140.69~1/RELEASE_ARM64_T8112', machine='arm64')  Threads 1
 Python 3.11.10 (main, Sep  7 2024, 01:03:31) [Clang 16.0.0 (clang-1600.0.26.3)]
 numpy 2.3.3  scipy 1.16.2  h5py 3.12.1
-Date: Sun Oct 12 08:03:21 2025
+Date: Tue Oct 14 07:29:00 2025
 PySCF version 2.7.0
 PySCF path  /Users/jmhrzz/HPQC/PySCF/venv/Interface/lib/python3.11/site-packages/pyscf
 
@@ -276,7 +268,7 @@ SCF conv_tol_grad = None
 SCF ddm_tol = 1e-10
 SCF max_cycles = 9999
 direct_scf = False
-chkfile to save SCF result = /var/folders/sv/p893skhd53z1sh_0fgwlc_0w0000gn/T/tmppdq966ud
+chkfile to save SCF result = /var/folders/sv/p893skhd53z1sh_0fgwlc_0w0000gn/T/tmpw33gkfmx
 max_memory 4000 MB (current use 0 MB)
 atom = Be
 Set gradient conv threshold to 3.16228e-05
