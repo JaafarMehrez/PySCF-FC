@@ -1,14 +1,17 @@
 import pyscf
 import numpy as np
 import warnings
+import numpy as np
+import pandas as pd
+import pyscf.symm.param as param
+import pyscf.lib.logger as logger
 from functools import reduce
 from pyscf import gto
 from pyscf.gto.basis import parse_gaussian
 from pyscf.mp.mp2 import get_frozen_mask
 from pyscf import lib, ao2mo
 from pyscf.scf import atom_hf
-import pyscf.symm.param as param
-import pyscf.lib.logger as logger
+from pyscf import symm
 from pyscf import __config__
 
 np.set_printoptions(threshold=np.inf)
@@ -115,11 +118,6 @@ def main():
     )
     mf.kernel()
     atom_hf.AtomSphAverageRHF = original_AtomSphAverageRHF
-    
-    
-    import numpy as np
-    import pandas as pd
-    from pyscf import symm
     
     def as_spin_tuple(x):
         if isinstance(x, (list, tuple)):
@@ -243,19 +241,7 @@ def main():
             r = row.iloc[0]
             occ_mark = 'occ' if r['is_occupied'] else 'vir'
             print(f"{i:3d}: {spin:5s} {r['irrep']:>4s} idx={r['mo_index']:>3d} {occ_mark:>3s}  E = {r['energy']: .12f}")
-
-    '''
-    Example usage:
-    df = build_mo_table(mf, check_orbsym=False)
-    ordered = order_mos(df, mode='by_irrep_then_energy')   # or 'global_energy_asc', ...
-    print_irrep_ordered_list(df, ordered, top_n=30)
-    new_coeffs, new_energies, new_occs = reorder_mf_mos(mf, ordered)
-    '''
-
-
-    import numpy as np
-    import pandas as pd
-
+            
     def pair_and_sort_irrep_mos(df, pairing='zip'):
         pairs = []
         irr_names = list(dict.fromkeys(df['irrep']))
@@ -351,9 +337,7 @@ def main():
                 ordered_pairs_flat.append(('beta', p['beta_idx']))
                 
         return pairs, ordered_pairs_flat
-
-
-
+    
     def print_pairs_table(pairs):
         
         print(f"{'Row':>3s} {'Irrep':>6s} {'Alpha':>12s} {'Beta':>12s} {'Score':>12s}")
