@@ -286,63 +286,111 @@ DEFAULT_FLOAT_FORMAT = getattr(__config__, 'fcidump_float_format', ' %.16g')
 TOL = getattr(__config__, 'fcidump_write_tol', 1e-15)
 
 def write_hcore_uhf(fout, h1e_a, h1e_b, nmo, tol=TOL, float_format=DEFAULT_FLOAT_FORMAT):
-        h1e_a = h1e_a.reshape(nmo,nmo)
-        h1e_b = h1e_b.reshape(nmo,nmo)
-        indx = [i+1 for i in range(nmo)]
-        output_format = float_format + ' %5d %5d     0     0\n'
-        for i in range(nmo):
-            for j in range(i, nmo):
-                if abs(h1e_a[i,j]) > TOL:
-                    fout.write(output_format % (h1e_a[i,j], indx[i], indx[j]))
-        fout.write(' 0.00000000000000000000E+00' + '     0     0     0     0\n')
-        for i in range(nmo):
-            for j in range(i, nmo):
-                if abs(h1e_b[i,j]) > TOL:
-                    fout.write(output_format % (h1e_b[i,j], indx[i], indx[j]))
-        fout.write(' 0.00000000000000000000E+00' + '     0     0     0     0\n')
+    h1e_a = h1e_a.reshape(nmo,nmo)
+    h1e_b = h1e_b.reshape(nmo,nmo)
+    indx = [i+1 for i in range(nmo)]
+    output_format = float_format + ' %5d %5d     0     0\n'
+    for i in range(nmo):
+        for j in range(i, nmo):
+            if abs(h1e_a[i,j]) > TOL:
+                fout.write(output_format % (h1e_a[i,j], indx[i], indx[j]))
+    fout.write(' 0.00000000000000000000E+00' + '     0     0     0     0\n')
+    for i in range(nmo):
+        for j in range(i, nmo):
+            if abs(h1e_b[i,j]) > TOL:
+                fout.write(output_format % (h1e_b[i,j], indx[i], indx[j]))
+    fout.write(' 0.00000000000000000000E+00' + '     0     0     0     0\n')
+        
 
 def write_eri_uhf(fout, eri_a, eri_b, eri_ab, nmo, tol=TOL, float_format=DEFAULT_FLOAT_FORMAT):
-        npair = nmo*(nmo+1)//2
-        output_format = float_format + ' %5d %5d %5d %5d\n'
-        indx = [i+1 for i in range(nmo)]
-        if all(x.ndim == 2 for x in (eri_a, eri_b, eri_ab)): # 4-fold symmetry
-            assert all(x.ndim == 2 and x.size == npair**2 for x in (eri_a, eri_b, eri_ab))
-            kl = 0
-            for l in range(nmo):
-                for k in range(0, l+1):
-                    ij = 0
-                    for i in range(0, nmo):
-                        for j in range(0, i+1):
-                            if i >= k:
-                                if abs(eri_a[ij,kl]) > tol:
-                                    fout.write(output_format % (eri_a[ij,kl], indx[i], indx[j], indx[k], indx[l]))
-                            ij += 1
-                    kl += 1
-            fout.write(' 0.00000000000000000000E+00' + '     0     0     0     0\n')
-            kl = 0
-            for l in range(nmo):
-                for k in range(0, l+1):
-                    ij = 0
-                    for i in range(0, nmo):
-                        for j in range(0, i+1):
-                            if i >= k:
-                                if abs(eri_b[ij,kl]) > tol:
-                                    fout.write(output_format % (eri_b[ij,kl], indx[i], indx[j], indx[k], indx[l]))
-                            ij += 1
-                    kl += 1
-            fout.write(' 0.00000000000000000000E+00' + '     0     0     0     0\n')
-            ij = 0
-            for j in range(nmo):
-                for i in range(0, j+1):
-                    kl = 0
-                    for k in range(nmo):
-                        for l in range(0, k+1):
-                            if abs(eri_ab[ij,kl]) > tol:
-                                fout.write(output_format % (eri_ab[ij,kl], indx[i], indx[j], indx[k], indx[l]))
-                            kl += 1
-                    ij +=1
-            fout.write(' 0.00000000000000000000E+00' + '     0     0     0     0\n')
-            
+    eri_a = np.asarray(eri_a)
+    eri_b = np.asarray(eri_b)
+    eri_ab = np.asarray(eri_ab)
+    npair = nmo * (nmo + 1) // 2
+    output_format = float_format + ' %5d %5d %5d %5d\n'
+    indx = [i + 1 for i in range(nmo)]
+        
+    def pair_index(i, j):
+        return i * (i + 1) // 2 + j
+        
+    if eri_a.ndim == 2 and eri_b.ndim == 2 and eri_ab.ndim == 2:
+        assert eri_a.shape == (npair, npair) and eri_b.shape == (npair, npair) and eri_ab.shape == (npair, npair)
+        kl = 0
+        for l in range(nmo):
+            for k in range(0, l+1):
+                ij = 0
+                for i in range(0, nmo):
+                    for j in range(0, i+1):
+                        if i >= k:
+                            if abs(eri_a[ij, kl]) > tol:
+                                fout.write(output_format % (eri_a[ij, kl], indx[i], indx[j], indx[k], indx[l]))
+                        ij += 1
+                kl += 1
+        fout.write(' 0.00000000000000000000E+00' + '     0     0     0     0\n')
+         
+        kl = 0
+        for l in range(nmo):
+            for k in range(0, l+1):
+                ij = 0
+                for i in range(0, nmo):
+                    for j in range(0, i+1):
+                        if i >= k:
+                            if abs(eri_b[ij, kl]) > tol:
+                                fout.write(output_format % (eri_b[ij, kl], indx[i], indx[j], indx[k], indx[l]))
+                        ij += 1
+                kl += 1
+        fout.write(' 0.00000000000000000000E+00' + '     0     0     0     0\n')
+        
+        ij = 0
+        for j in range(nmo):
+            for i in range(0, j+1):
+                kl = 0
+                for k in range(nmo):
+                    for l in range(0, k+1):
+                        if abs(eri_ab[ij, kl]) > tol:
+                            fout.write(output_format % (eri_ab[ij, kl], indx[i], indx[j], indx[k], indx[l]))
+                        kl += 1
+                ij += 1
+        fout.write(' 0.00000000000000000000E+00' + '     0     0     0     0\n')
+        return
+    
+    # CASE B: full 4D arrays
+    if eri_a.ndim == 4 and eri_b.ndim == 4 and eri_ab.ndim == 4:
+        for i in range(nmo):
+            for j in range(0, i + 1):
+                ij_idx = pair_index(i, j)
+                for k in range(nmo):
+                    for l in range(0, k + 1):
+                        kl_idx = pair_index(k, l)
+                        if ij_idx >= kl_idx:
+                            val = eri_a[i, j, k, l]
+                            if abs(val) > tol:
+                                fout.write(output_format % (val, indx[i], indx[j], indx[k], indx[l]))
+        fout.write(' 0.00000000000000000000E+00' + '     0     0     0     0\n')
+        
+        for i in range(nmo):
+            for j in range(0, i + 1):
+                ij_idx = pair_index(i, j)
+                for k in range(nmo):
+                    for l in range(0, k + 1):
+                        kl_idx = pair_index(k, l)
+                        if ij_idx >= kl_idx:
+                            val = eri_b[i, j, k, l]
+                            if abs(val) > tol:
+                                fout.write(output_format % (val, indx[i], indx[j], indx[k], indx[l]))
+        fout.write(' 0.00000000000000000000E+00' + '     0     0     0     0\n')
+        
+        for i in range(nmo):
+            for j in range(0, i + 1):
+                for k in range(nmo):
+                    for l in range(0, k + 1):
+                        val = eri_ab[i, j, k, l]
+                        if abs(val) > tol:
+                            fout.write(output_format % (val, indx[i], indx[j], indx[k], indx[l]))
+        fout.write(' 0.00000000000000000000E+00' + '     0     0     0     0\n')
+        return
+        
+    raise RuntimeError(f"Unsupported ERI shapes: eri_a {eri_a.shape}, eri_b {eri_b.shape}, eri_ab {eri_ab.shape}")
 
 def write_head(fout, nmo, nelec, ms=0, orbsym=None):
         is_uhf = isinstance(nelec, (list, tuple)) and len(nelec) == 2 and nelec[0] != nelec[1]
